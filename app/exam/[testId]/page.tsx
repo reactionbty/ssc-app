@@ -130,21 +130,7 @@ export default function ExamPage() {
       setTest(testData);
 setQuestions(orderedQuestions);
 
-useEffect(() => {
-  if (
-    loading ||
-    questions.length === 0 ||
-    attemptId
-  ) {
-    return;
-  }
 
-  createOrResumeAttempt();
-}, [
-  loading,
-  questions.length,
-  attemptId,
-]);
 
 // ==========================================
 // RESTORE OR CREATE EXAM END TIME
