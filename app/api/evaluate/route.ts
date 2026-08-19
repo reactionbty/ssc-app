@@ -111,6 +111,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Update the active test attempt
+const { data: activeAttempt, error: attemptFindError } =
+  await supabase
+    .from('test_attempts')
+    .select('id')
+    .eq('test_id', testId)
+    .eq('status', 'in_progress')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+if (attemptFindError) {
+  console.error(
+    'Could not find active attempt:',
+    attemptFindError
+  );
+}
+
+if (activeAttempt) {
+  const { error: attemptUpdateError } =
+    await supabase
+      .from('test_attempts')
+      .update({
+        status: 'submitted',
+        submitted_at: new Date().toISOString(),
+        score,
+        correct,
+        wrong,
+        unattempted,
+      })
+      .eq('id', activeAttempt.id);
+
+  if (attemptUpdateError) {
+    console.error(
+      'Could not update test attempt:',
+      attemptUpdateError
+    );
+  }
+}
+
     return NextResponse.json({
       success: true,
       result: {
