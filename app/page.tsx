@@ -140,46 +140,29 @@ export default function SSCExamPage() {
   // TIMER
   // --------------------------------------------------
 
-  const submitTest = useCallback(async () => {
-    if (submittedRef.current || questions.length === 0) {
-      return;
-    }
+ const submitTest = useCallback(async () => {
+  if (submittedRef.current || questions.length === 0) {
+    return;
+  }
 
-    submittedRef.current = true;
-    setIsSubmitting(true);
+  submittedRef.current = true;
+  setIsSubmitting(true);
 
-    let score = 0;
-    let correct = 0;
-    let wrong = 0;
-
-    questions.forEach((q) => {
-      const userAnswer = selectedAnswers[q.id];
-
-      if (userAnswer) {
-        if (userAnswer === q.correct_option) {
-          score += 2;
-          correct++;
-        } else {
-          score -= 0.5;
-          wrong++;
-        }
-      }
+  try {
+    const response = await fetch('/api/evaluate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        answers: selectedAnswers,
+      }),
     });
 
-    const unattempted = questions.length - correct - wrong;
+    const data = await response.json();
 
-    const { error } = await supabase
-      .from('test_results')
-      .insert([
-        {
-          score,
-          correct_answers: correct,
-          wrong_answers: wrong,
-        },
-      ]);
-
-    if (error) {
-      console.error('Error saving result:', error);
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Submission failed');
     }
 
     localStorage.removeItem('ssc_exam_answers');
@@ -187,16 +170,21 @@ export default function SSCExamPage() {
     localStorage.removeItem('ssc_exam_current_index');
     localStorage.removeItem('ssc_exam_time');
 
-    setScoreResult({
-      score,
-      correct,
-      wrong,
-      unattempted,
-    });
-
+    setScoreResult(data.result);
     setShowSubmitModal(false);
+
+  } catch (error) {
+    console.error('Submission error:', error);
+
+    alert(
+      'Could not submit the test. Please check your internet connection and try again.'
+    );
+
+    submittedRef.current = false;
+  } finally {
     setIsSubmitting(false);
-  }, [questions, selectedAnswers]);
+  }
+}, [questions.length, selectedAnswers]);
 
   useEffect(() => {
     if (questions.length === 0 || scoreResult || submittedRef.current) {
