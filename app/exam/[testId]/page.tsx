@@ -59,6 +59,9 @@ export default function ExamPage() {
   const [markedForReview, setMarkedForReview] = useState<
     Record<string, boolean>
   >({});
+  const [visitedQuestions, setVisitedQuestions] = useState<
+    Record<string, boolean>
+  >({});
 
   const [timeLeft, setTimeLeft] = useState(0);
 
@@ -161,6 +164,14 @@ export default function ExamPage() {
   }, [questions, availableSubjects]);
 
   const currentQuestion = questions[currentIndex];
+  useEffect(() => {
+  if (!currentQuestion) return;
+
+  setVisitedQuestions((previous) => ({
+    ...previous,
+    [currentQuestion.id]: true,
+  }));
+}, [currentQuestion]);
 
   const currentSubject = currentQuestion?.subject || '';
 
@@ -209,6 +220,10 @@ export default function ExamPage() {
 
       localStorage.removeItem(
         `ssc_exam_review_${testId}`
+      );
+
+      localStorage.removeItem(
+       `ssc_exam_visited_${testId}`
       );
 
       localStorage.removeItem(
@@ -284,6 +299,15 @@ export default function ExamPage() {
       JSON.stringify(markedForReview)
     );
   }, [markedForReview, testId]);
+  
+  useEffect(() => {
+  if (!testId) return;
+
+  localStorage.setItem(
+    `ssc_exam_visited_${testId}`,
+    JSON.stringify(visitedQuestions)
+  );
+}, [visitedQuestions, testId]);
 
   useEffect(() => {
     if (!testId) return;
@@ -308,6 +332,9 @@ export default function ExamPage() {
     const review = localStorage.getItem(
       `ssc_exam_review_${testId}`
     );
+    const visited = localStorage.getItem(
+      `ssc_exam_visited_${testId}`
+    );
 
     const index = localStorage.getItem(
       `ssc_exam_index_${testId}`
@@ -319,6 +346,10 @@ export default function ExamPage() {
 
     if (review) {
       setMarkedForReview(JSON.parse(review));
+    }
+
+    if (visited) {
+      setVisitedQuestions(JSON.parse(visited));
     }
 
     if (index) {
@@ -876,6 +907,42 @@ export default function ExamPage() {
               </div>
 
             </div>
+            <div className="mt-5 border-t pt-4">
+
+  <p className="text-xs font-bold text-gray-500 uppercase mb-3">
+    Question Status
+  </p>
+
+  <div className="grid grid-cols-2 gap-2 text-xs">
+
+    <div className="flex items-center gap-2">
+      <span className="w-4 h-4 rounded bg-gray-100 border" />
+      <span>Not Visited</span>
+    </div>
+
+    <div className="flex items-center gap-2">
+      <span className="w-4 h-4 rounded bg-red-500" />
+      <span>Not Answered</span>
+    </div>
+
+    <div className="flex items-center gap-2">
+      <span className="w-4 h-4 rounded bg-green-500" />
+      <span>Answered</span>
+    </div>
+
+    <div className="flex items-center gap-2">
+      <span className="w-4 h-4 rounded bg-purple-600" />
+      <span>Review</span>
+    </div>
+
+    <div className="flex items-center gap-2 col-span-2">
+      <span className="w-4 h-4 rounded bg-yellow-500" />
+      <span>Answered + Review</span>
+    </div>
+
+  </div>
+
+</div>
 
             {/* SECTION PALETTE */}
 
@@ -895,32 +962,44 @@ export default function ExamPage() {
                         (q) => q.id === question.id
                       );
 
-                    const answered =
-                      Boolean(
-                        selectedAnswers[question.id]
-                      );
+                    const answered = Boolean(
+  selectedAnswers[question.id]
+);
 
-                    const review =
-                      Boolean(
-                        markedForReview[question.id]
-                      );
+const review = Boolean(
+  markedForReview[question.id]
+);
 
-                    const current =
-                      questionIndex === currentIndex;
+const visited = Boolean(
+  visitedQuestions[question.id]
+);
 
-                    let color =
-                      'bg-gray-100 text-gray-700 border-gray-200';
+const current =
+  questionIndex === currentIndex;
 
-                    if (review && answered) {
-                      color =
-                        'bg-yellow-500 text-white border-yellow-500';
-                    } else if (review) {
-                      color =
-                        'bg-purple-600 text-white border-purple-600';
-                    } else if (answered) {
-                      color =
-                        'bg-green-500 text-white border-green-500';
-                    }
+let color =
+  'bg-gray-100 text-gray-700 border-gray-200';
+
+// Answered + Marked for Review
+if (review && answered) {
+  color =
+    'bg-yellow-500 text-white border-yellow-500';
+
+// Marked for Review
+} else if (review) {
+  color =
+    'bg-purple-600 text-white border-purple-600';
+
+// Answered
+} else if (answered) {
+  color =
+    'bg-green-500 text-white border-green-500';
+
+// Visited but not answered
+} else if (visited) {
+  color =
+    'bg-red-500 text-white border-red-500';
+}
 
                     return (
                       <button
