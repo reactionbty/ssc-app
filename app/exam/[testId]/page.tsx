@@ -11,6 +11,7 @@ const supabase = createClient(
 
 type Question = {
   id: string;
+  question_number: number;
   question_text: string;
   option_a: string;
   option_b: string;
@@ -97,7 +98,7 @@ export default function ExamPage() {
       const { data: questionData, error: questionError } = await supabase
         .from('questions')
         .select(
-          'id, question_text, option_a, option_b, option_c, option_d, subject'
+          'id, question_number, question_text, option_a, option_b, option_c, option_d, subject'
         )
         .eq('test_id', testId);
 
@@ -115,16 +116,11 @@ export default function ExamPage() {
       }
 
       // Arrange questions by the standard SSC section order.
-      const orderedQuestions = [...questionData].sort((a, b) => {
-        const subjectA = SUBJECT_ORDER.indexOf(a.subject);
-        const subjectB = SUBJECT_ORDER.indexOf(b.subject);
-
-        if (subjectA === -1 && subjectB === -1) return 0;
-        if (subjectA === -1) return 1;
-        if (subjectB === -1) return -1;
-
-        return subjectA - subjectB;
-      });
+      const orderedQuestions = [...questionData].sort(
+         (a: any, b: any) => {
+         return a.question_number - b.question_number;
+       }
+      );
 
       setTest(testData);
       setQuestions(orderedQuestions);
@@ -676,7 +672,7 @@ export default function ExamPage() {
                 </p>
 
                 <p className="font-bold text-gray-800 mt-1">
-                  Question {currentIndex + 1}
+                  Question {currentQuestion.question_number}
                   <span className="font-normal text-gray-400">
                     {' '}
                     / {questions.length}
