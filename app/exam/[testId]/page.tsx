@@ -200,8 +200,8 @@ setLoading(false);
     return result;
   }, [questions, availableSubjects]);
 
-  const createOrResumeAttempt = async () => {const createOrResumeAttempt = async (
-  loadedQuestions: any[]
+  const createOrResumeAttempt = async (
+  loadedQuestions: Question[]
 ) => {
   if (!testId) return;
 
@@ -473,9 +473,6 @@ setLoading(false);
       `ssc_exam_visited_${testId}`
     );
 
-    const index = localStorage.getItem(
-      `ssc_exam_index_${testId}`
-    );
 
     if (answers) {
       setSelectedAnswers(JSON.parse(answers));
@@ -489,10 +486,7 @@ setLoading(false);
       setVisitedQuestions(JSON.parse(visited));
     }
 
-    if (index && !attemptId) {
-  setCurrentIndex(Number(index));
-}
-  }, [testId, attemptId]);
+  }, [testId]);
 
   // ==================================================
   // QUESTION NAVIGATION
