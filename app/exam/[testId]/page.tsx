@@ -489,10 +489,10 @@ setLoading(false);
       setVisitedQuestions(JSON.parse(visited));
     }
 
-    if (index) {
-      setCurrentIndex(Number(index));
-    }
-  }, [testId]);
+    if (index && !attemptId) {
+  setCurrentIndex(Number(index));
+}
+  }, [testId, attemptId]);
 
   // ==================================================
   // QUESTION NAVIGATION
