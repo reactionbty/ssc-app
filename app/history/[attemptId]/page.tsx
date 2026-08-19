@@ -17,6 +17,7 @@ export default function AttemptResultPage() {
 
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState<any>(null);
+  const [questions, setQuestions] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadAttempt() {
@@ -54,13 +55,42 @@ export default function AttemptResultPage() {
         .single();
 
       if (error || !data) {
-        console.error('Attempt result error:', error);
-        setAttempt(null);
-      } else {
-        setAttempt(data);
-      }
+  console.error('Attempt result error:', error);
+  setAttempt(null);
+  setLoading(false);
+  return;
+}
 
-      setLoading(false);
+const { data: questionData, error: questionError } =
+  await supabase
+    .from('questions')
+    .select(`
+      id,
+      question_number,
+      question_text,
+      option_a,
+      option_b,
+      option_c,
+      option_d,
+      correct_option,
+      subject
+    `)
+    .eq('test_id', data.test_id)
+    .order('question_number', {
+      ascending: true,
+    });
+
+if (questionError) {
+  console.error(
+    'Question review error:',
+    questionError
+  );
+} else {
+  setQuestions(questionData || []);
+}
+
+setAttempt(data);
+setLoading(false);
     }
 
     loadAttempt();
