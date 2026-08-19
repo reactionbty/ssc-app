@@ -15,7 +15,6 @@ type Question = {
   option_b: string;
   option_c: string;
   option_d: string;
-  correct_option: string;
 };
 
 type ReviewState = Record<string, boolean>;
@@ -55,7 +54,7 @@ export default function SSCExamPage() {
       const { data, error } = await supabase
         .from('questions')
         .select(
-          'id, question_text, option_a, option_b, option_c, option_d, correct_option'
+          'id, question_text, option_a, option_b, option_c, option_d'
         );
 
       if (error) {
