@@ -129,6 +129,9 @@ export default function ExamPage() {
 
       setTest(testData);
 setQuestions(orderedQuestions);
+await createOrResumeAttempt();
+
+setLoading(false);
 
 
 
