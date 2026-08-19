@@ -184,7 +184,7 @@ export default function HomePage() {
                   {/* Start button */}
 
                   <button
-                    onClick={() => router.push(`/exam/${test.id}`)}
+                    onClick={() => router.push(`/instructions/${test.id}`)}
                     className="w-full mt-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition"
                   >
                     START TEST
