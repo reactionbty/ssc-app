@@ -234,6 +234,14 @@ export default function HistoryPage() {
                     </div>
 
                   </div>
+                   <button
+            onClick={() =>
+              router.push(`/history/${attempt.id}`)
+            }
+            className="w-full mt-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold"
+          >
+            View Result
+          </button>
 
                 </div>
               );
