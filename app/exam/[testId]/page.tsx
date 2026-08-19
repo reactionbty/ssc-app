@@ -129,7 +129,7 @@ export default function ExamPage() {
 
       setTest(testData);
 setQuestions(orderedQuestions);
-await createOrResumeAttempt();
+await createOrResumeAttempt(orderedQuestions);
 
 setLoading(false);
 
@@ -200,7 +200,9 @@ setLoading(false);
     return result;
   }, [questions, availableSubjects]);
 
-  const createOrResumeAttempt = async () => {
+  const createOrResumeAttempt = async () => {const createOrResumeAttempt = async (
+  loadedQuestions: any[]
+) => {
   if (!testId) return;
 
   const { data: existingAttempt, error: existingError } =
@@ -222,9 +224,20 @@ setLoading(false);
   }
 
   if (existingAttempt) {
-    setAttemptId(existingAttempt.id);
-    return;
+  setAttemptId(existingAttempt.id);
+
+  const savedQuestionIndex = loadedQuestions.findIndex(
+    (q: any) =>
+      q.question_number ===
+      existingAttempt.last_question_number
+  );
+
+  if (savedQuestionIndex >= 0) {
+    setCurrentIndex(savedQuestionIndex);
   }
+
+  return;
+}
 
   const { data: newAttempt, error: createError } =
     await supabase
