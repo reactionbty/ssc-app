@@ -64,6 +64,7 @@ export default function ExamPage() {
   >({});
 
   const [timeLeft, setTimeLeft] = useState(0);
+  const [examEndTime, setExamEndTime] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -126,12 +127,42 @@ export default function ExamPage() {
       );
 
       setTest(testData);
-      setQuestions(orderedQuestions);
+setQuestions(orderedQuestions);
 
-      // Dynamic duration from database.
-      setTimeLeft(testData.duration_minutes * 60);
+// ==========================================
+// RESTORE OR CREATE EXAM END TIME
+// ==========================================
 
-      setLoading(false);
+const endTimeKey = `ssc_exam_end_time_${testId}`;
+
+const savedEndTime = localStorage.getItem(endTimeKey);
+
+let endTime: number;
+
+if (savedEndTime) {
+  endTime = Number(savedEndTime);
+} else {
+  endTime =
+    Date.now() +
+    testData.duration_minutes * 60 * 1000;
+
+  localStorage.setItem(
+    endTimeKey,
+    String(endTime)
+  );
+}
+
+setExamEndTime(endTime);
+
+// Calculate remaining time immediately.
+const remainingSeconds = Math.max(
+  0,
+  Math.floor((endTime - Date.now()) / 1000)
+);
+
+setTimeLeft(remainingSeconds);
+
+setLoading(false);
     }
 
     loadTest();
@@ -230,6 +261,10 @@ export default function ExamPage() {
         `ssc_exam_index_${testId}`
       );
 
+      localStorage.removeItem(
+  `ssc_exam_end_time_${testId}`
+);
+
       setScoreResult(data.result);
       setShowSubmitModal(false);
 
@@ -247,36 +282,49 @@ export default function ExamPage() {
   }, [questions.length, selectedAnswers, testId]);
 
   useEffect(() => {
-    if (
-      loading ||
-      questions.length === 0 ||
-      scoreResult ||
-      submittedRef.current
-    ) {
-      return;
+  if (
+    loading ||
+    questions.length === 0 ||
+    scoreResult ||
+    submittedRef.current ||
+    !examEndTime
+  ) {
+    return;
+  }
+
+  const updateTimer = () => {
+    const remaining = Math.max(
+      0,
+      Math.floor(
+        (examEndTime - Date.now()) / 1000
+      )
+    );
+
+    setTimeLeft(remaining);
+
+    if (remaining <= 0) {
+      submitTest();
     }
+  };
 
-    const timer = setInterval(() => {
-      setTimeLeft((previous) => {
-        if (previous <= 1) {
-          clearInterval(timer);
+  // Update immediately.
+  updateTimer();
 
-          submitTest();
+  // Keep checking the actual end time.
+  const timer = setInterval(
+    updateTimer,
+    1000
+  );
 
-          return 0;
-        }
+  return () => clearInterval(timer);
 
-        return previous - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [
-    loading,
-    questions.length,
-    scoreResult,
-    submitTest,
-  ]);
+}, [
+  loading,
+  questions.length,
+  scoreResult,
+  examEndTime,
+  submitTest,
+]);
 
   // ==================================================
   // SAVE PROGRESS
