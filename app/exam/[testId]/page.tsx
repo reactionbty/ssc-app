@@ -250,6 +250,28 @@ setLoading(false);
 
   const currentQuestion = questions[currentIndex];
   useEffect(() => {
+  if (!attemptId || !currentQuestion) return;
+
+  const updateCurrentQuestion = async () => {
+    const { error } = await supabase
+      .from('test_attempts')
+      .update({
+        last_question_number:
+          currentQuestion.question_number,
+      })
+      .eq('id', attemptId);
+
+    if (error) {
+      console.error(
+        'Failed to save current question:',
+        error
+      );
+    }
+  };
+
+  updateCurrentQuestion();
+}, [attemptId, currentQuestion]);
+  useEffect(() => {
   if (!currentQuestion) return;
 
   setVisitedQuestions((previous) => ({
