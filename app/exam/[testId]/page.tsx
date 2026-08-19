@@ -57,6 +57,7 @@ export default function ExamPage() {
     Record<string, string>
   >({});
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [progressLoaded, setProgressLoaded] = useState(false);
   const [markedForReview, setMarkedForReview] = useState<
     Record<string, boolean>
   >({});
@@ -420,40 +421,40 @@ setLoading(false);
   // ==================================================
 
   useEffect(() => {
-    if (!testId) return;
+  if (!testId || !progressLoaded) return;
 
-    localStorage.setItem(
-      `ssc_exam_answers_${testId}`,
-      JSON.stringify(selectedAnswers)
-    );
-  }, [selectedAnswers, testId]);
+  localStorage.setItem(
+    `ssc_exam_answers_${testId}`,
+    JSON.stringify(selectedAnswers)
+  );
+}, [selectedAnswers, testId, progressLoaded]);
 
   useEffect(() => {
-    if (!testId) return;
+    if (!testId || !progressLoaded) return;
 
     localStorage.setItem(
       `ssc_exam_review_${testId}`,
       JSON.stringify(markedForReview)
     );
-  }, [markedForReview, testId]);
+  }, [markedForReview, testId, progressLoaded]);
   
   useEffect(() => {
-  if (!testId) return;
+   if (!testId || !progressLoaded) return;
 
   localStorage.setItem(
     `ssc_exam_visited_${testId}`,
     JSON.stringify(visitedQuestions)
   );
-}, [visitedQuestions, testId]);
+}, [visitedQuestions, testId, progressLoaded]);
 
   useEffect(() => {
-    if (!testId) return;
+  if (!testId || !progressLoaded) return;
 
-    localStorage.setItem(
-      `ssc_exam_index_${testId}`,
-      String(currentIndex)
-    );
-  }, [currentIndex, testId]);
+  localStorage.setItem(
+    `ssc_exam_index_${testId}`,
+    String(currentIndex)
+  );
+}, [currentIndex, testId, progressLoaded]);
 
   // ==================================================
   // RESTORE ANSWERS
@@ -485,6 +486,8 @@ setLoading(false);
     if (visited) {
       setVisitedQuestions(JSON.parse(visited));
     }
+    
+    setProgressLoaded(true);
 
   }, [testId]);
 
