@@ -56,6 +56,7 @@ export default function ExamPage() {
   const [selectedAnswers, setSelectedAnswers] = useState<
     Record<string, string>
   >({});
+  const [attemptId, setAttemptId] = useState<string | null>(null);
   const [markedForReview, setMarkedForReview] = useState<
     Record<string, boolean>
   >({});
@@ -129,6 +130,22 @@ export default function ExamPage() {
       setTest(testData);
 setQuestions(orderedQuestions);
 
+useEffect(() => {
+  if (
+    loading ||
+    questions.length === 0 ||
+    attemptId
+  ) {
+    return;
+  }
+
+  createOrResumeAttempt();
+}, [
+  loading,
+  questions.length,
+  attemptId,
+]);
+
 // ==========================================
 // RESTORE OR CREATE EXAM END TIME
 // ==========================================
@@ -193,6 +210,54 @@ setLoading(false);
 
     return result;
   }, [questions, availableSubjects]);
+
+  const createOrResumeAttempt = async () => {
+  if (!testId) return;
+
+  const { data: existingAttempt, error: existingError } =
+    await supabase
+      .from('test_attempts')
+      .select('*')
+      .eq('test_id', testId)
+      .eq('status', 'in_progress')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+  if (existingError) {
+    console.error(
+      'Attempt lookup error:',
+      existingError
+    );
+    return;
+  }
+
+  if (existingAttempt) {
+    setAttemptId(existingAttempt.id);
+    return;
+  }
+
+  const { data: newAttempt, error: createError } =
+    await supabase
+      .from('test_attempts')
+      .insert({
+        test_id: testId,
+        status: 'in_progress',
+        last_question_number: 1,
+      })
+      .select()
+      .single();
+
+  if (createError) {
+    console.error(
+      'Attempt creation error:',
+      createError
+    );
+    return;
+  }
+
+  setAttemptId(newAttempt.id);
+};
 
   const currentQuestion = questions[currentIndex];
   useEffect(() => {
