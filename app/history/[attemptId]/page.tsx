@@ -301,6 +301,172 @@ setLoading(false);
 
         </section>
 
+        {/* QUESTION REVIEW */}
+
+<section className="bg-white border rounded-2xl p-6 shadow-sm mt-5">
+
+  <h2 className="text-lg font-bold text-gray-800">
+    Question Review
+  </h2>
+
+  <div className="space-y-4 mt-5">
+
+    {questions.map((question) => {
+
+      const userAnswer =
+        attempt.answers?.[question.id] || null;
+
+      const correctAnswer =
+        question.correct_option;
+
+      const isCorrect =
+        userAnswer === correctAnswer;
+
+      const isUnattempted =
+        !userAnswer;
+
+      let statusClass = 'border-gray-200';
+
+      if (isUnattempted) {
+        statusClass =
+          'border-gray-300 bg-gray-50';
+      } else if (isCorrect) {
+        statusClass =
+          'border-green-200 bg-green-50';
+      } else {
+        statusClass =
+          'border-red-200 bg-red-50';
+      }
+
+      return (
+        <div
+          key={question.id}
+          className={`border rounded-xl p-4 ${statusClass}`}
+        >
+
+          <div className="flex items-start justify-between gap-3">
+
+            <div>
+
+              <p className="text-xs font-bold text-blue-600">
+                {question.subject}
+              </p>
+
+              <p className="font-bold text-gray-800 mt-1">
+                Question {question.question_number}
+              </p>
+
+            </div>
+
+            <div className="text-sm font-bold">
+
+              {isUnattempted ? (
+                <span className="text-gray-500">
+                  ⚪ Unattempted
+                </span>
+              ) : isCorrect ? (
+                <span className="text-green-600">
+                  ✅ Correct
+                </span>
+              ) : (
+                <span className="text-red-600">
+                  ❌ Wrong
+                </span>
+              )}
+
+            </div>
+
+          </div>
+
+          <p className="text-gray-800 font-medium mt-4">
+            {question.question_text}
+          </p>
+
+          <div className="grid sm:grid-cols-2 gap-2 mt-4 text-sm">
+
+            {[
+              ['A', question.option_a],
+              ['B', question.option_b],
+              ['C', question.option_c],
+              ['D', question.option_d],
+            ].map(([letter, text]) => {
+
+              const isUserAnswer =
+                userAnswer === letter;
+
+              const isCorrectAnswer =
+                correctAnswer === letter;
+
+              let optionClass =
+                'border-gray-200 bg-white';
+
+              if (isCorrectAnswer) {
+                optionClass =
+                  'border-green-500 bg-green-50';
+              } else if (isUserAnswer) {
+                optionClass =
+                  'border-red-500 bg-red-50';
+              }
+
+              return (
+                <div
+                  key={letter}
+                  className={`border rounded-lg p-3 ${optionClass}`}
+                >
+                  <span className="font-bold mr-2">
+                    {letter}.
+                  </span>
+
+                  {text}
+
+                  {isCorrectAnswer && (
+                    <span className="ml-2 text-green-600 font-bold">
+                      Correct
+                    </span>
+                  )}
+
+                  {isUserAnswer &&
+                    !isCorrectAnswer && (
+                      <span className="ml-2 text-red-600 font-bold">
+                        Your Answer
+                      </span>
+                    )}
+                </div>
+              );
+
+            })}
+
+          </div>
+
+          <div className="mt-4 text-sm">
+
+            <p>
+              <span className="font-semibold">
+                Your Answer:
+              </span>{' '}
+
+              {userAnswer || 'Not Attempted'}
+            </p>
+
+            <p className="mt-1">
+              <span className="font-semibold">
+                Correct Answer:
+              </span>{' '}
+
+              {correctAnswer}
+            </p>
+
+          </div>
+
+        </div>
+      );
+
+    })}
+
+  </div>
+
+</section>
+
         {/* BACK */}
 
         <button
