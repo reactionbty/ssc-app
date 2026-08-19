@@ -29,11 +29,19 @@ type Test = {
   negative_marks: number;
 };
 
+type SectionScore = {
+  score: number;
+  correct: number;
+  wrong: number;
+  unattempted: number;
+};
+
 type Result = {
   score: number;
   correct: number;
   wrong: number;
   unattempted: number;
+  sectionScores: Record<string, SectionScore>;
 };
 
 const SUBJECT_ORDER = [
@@ -724,6 +732,86 @@ setLoading(false);
             </div>
 
           </div>
+
+          {/* SECTION PERFORMANCE */}
+
+<div className="mt-6">
+
+  <h2 className="text-lg font-bold text-gray-800 mb-3">
+    Section Performance
+  </h2>
+
+  <div className="space-y-3">
+
+    {[
+      'Reasoning',
+      'General Awareness',
+      'Quantitative Aptitude',
+      'English',
+    ].map((subject) => {
+
+      const section =
+        scoreResult.sectionScores?.[subject];
+
+      if (!section) return null;
+
+      return (
+        <div
+          key={subject}
+          className="border rounded-xl p-4"
+        >
+
+          <div className="flex items-center justify-between gap-3">
+
+            <p className="font-bold text-gray-800">
+              {subject}
+            </p>
+
+            <p className="font-bold text-blue-600">
+              {section.score}
+            </p>
+
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+
+            <div className="bg-green-50 rounded-lg p-2">
+              <p className="font-bold text-green-600">
+                {section.correct}
+              </p>
+              <p className="text-[10px] text-gray-500">
+                Correct
+              </p>
+            </div>
+
+            <div className="bg-red-50 rounded-lg p-2">
+              <p className="font-bold text-red-600">
+                {section.wrong}
+              </p>
+              <p className="text-[10px] text-gray-500">
+                Wrong
+              </p>
+            </div>
+
+            <div className="bg-gray-100 rounded-lg p-2">
+              <p className="font-bold text-gray-600">
+                {section.unattempted}
+              </p>
+              <p className="text-[10px] text-gray-500">
+                Unattempted
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+      );
+
+    })}
+
+  </div>
+
+</div>
 
           <button
             onClick={() => router.push('/')}

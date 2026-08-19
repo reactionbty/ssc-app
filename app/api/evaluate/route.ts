@@ -183,15 +183,16 @@ if (activeAttempt) {
   }
 }
 
-    return NextResponse.json({
-      success: true,
-      result: {
-        score,
-        correct,
-        wrong,
-        unattempted,
-      },
-    });
+   return NextResponse.json({
+  success: true,
+  result: {
+    score,
+    correct,
+    wrong,
+    unattempted,
+    sectionScores,
+  },
+});
 
   } catch (error) {
     console.error('Evaluation error:', error);
