@@ -213,12 +213,23 @@ setLoading(false);
   loadedQuestions: Question[]
 ) => {
   if (!testId) return;
+  const {
+  data: { user },
+  error: userError,
+} = await supabase.auth.getUser();
+
+if (userError || !user) {
+  console.error('Could not get logged-in user:', userError);
+  router.push('/login');
+  return;
+}
 
   const { data: existingAttempt, error: existingError } =
     await supabase
       .from('test_attempts')
       .select('*')
       .eq('test_id', testId)
+      .eq('user_id', user.id)
       .eq('status', 'in_progress')
       .order('created_at', { ascending: false })
       .limit(1)
@@ -252,10 +263,11 @@ setLoading(false);
     await supabase
       .from('test_attempts')
       .insert({
-        test_id: testId,
-        status: 'in_progress',
-        last_question_number: 1,
-      })
+  test_id: testId,
+  user_id: user.id,
+  status: 'in_progress',
+  last_question_number: 1,
+})
       .select()
       .single();
 
