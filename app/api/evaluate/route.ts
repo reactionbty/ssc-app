@@ -172,6 +172,7 @@ if (activeAttempt) {
   wrong,
   unattempted,
   section_scores: sectionScores,
+  answers,
 })
       .eq('id', activeAttempt.id);
 
