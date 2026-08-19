@@ -1,8 +1,8 @@
 'use client';
 
-import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { useParams, useRouter } from 'next/navigation';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,183 +16,232 @@ type Question = {
   option_b: string;
   option_c: string;
   option_d: string;
+  subject: string;
 };
 
-type ReviewState = Record<string, boolean>;
+type Test = {
+  id: string;
+  title: string;
+  description: string | null;
+  duration_minutes: number;
+  positive_marks: number;
+  negative_marks: number;
+};
 
-const EXAM_DURATION = 60 * 60; // 60 minutes
+type Result = {
+  score: number;
+  correct: number;
+  wrong: number;
+  unattempted: number;
+};
 
-export default function SSCExamPage() {
+const SUBJECT_ORDER = [
+  'Reasoning',
+  'General Awareness',
+  'Quantitative Aptitude',
+  'English',
+];
+
+export default function ExamPage() {
   const params = useParams();
+  const router = useRouter();
+
   const testId = params.testId as string;
+
+  const [test, setTest] = useState<Test | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
-  const [markedForReview, setMarkedForReview] = useState<ReviewState>({});
-  const [timeLeft, setTimeLeft] = useState(EXAM_DURATION);
+  const [selectedAnswers, setSelectedAnswers] = useState<
+    Record<string, string>
+  >({});
+  const [markedForReview, setMarkedForReview] = useState<
+    Record<string, boolean>
+  >({});
 
-  const [scoreResult, setScoreResult] = useState<{
-    score: number;
-    correct: number;
-    wrong: number;
-    unattempted: number;
-  } | null>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
 
+  const [loading, setLoading] = useState(true);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [scoreResult, setScoreResult] = useState<Result | null>(null);
+
   const submittedRef = useRef(false);
 
-  // --------------------------------------------------
-  // LOAD QUESTIONS
-  // --------------------------------------------------
+  // ==================================================
+  // LOAD TEST + QUESTIONS
+  // ==================================================
 
   useEffect(() => {
-    async function loadQuestions() {
-      // IMPORTANT:
-      // correct_option is still selected temporarily because
-      // your current scoring system works on the client.
-      // We will move scoring to the API in Phase 2.
+    if (!testId) return;
 
-      const { data, error } = await supabase
-        .from('questions')
+    async function loadTest() {
+      setLoading(true);
+
+      const { data: testData, error: testError } = await supabase
+        .from('tests')
         .select(
-          'id, question_text, option_a, option_b, option_c, option_d'
+          'id, title, description, duration_minutes, positive_marks, negative_marks'
         )
-        .eq('test_id', testId);
+        .eq('id', testId)
+        .single();
 
-      if (error) {
-        console.error('Database connection error:', error);
-        alert('SUPABASE ERROR: ' + error.message);
+      if (testError || !testData) {
+        console.error(testError);
+        alert('Test could not be loaded.');
+        router.push('/');
         return;
       }
 
-      if (data && data.length > 0) {
-        setQuestions(data);
-      } else {
-        alert('Your database connected, but the questions table is EMPTY!');
+      const { data: questionData, error: questionError } = await supabase
+        .from('questions')
+        .select(
+          'id, question_text, option_a, option_b, option_c, option_d, subject'
+        )
+        .eq('test_id', testId);
+
+      if (questionError) {
+        console.error(questionError);
+        alert('Questions could not be loaded.');
+        router.push('/');
+        return;
       }
-    }
 
-    loadQuestions();
-  }, []);
-
-  // --------------------------------------------------
-  // RESTORE TEST PROGRESS
-  // --------------------------------------------------
-
-  useEffect(() => {
-    const savedAnswers = localStorage.getItem('ssc_exam_answers');
-    const savedReview = localStorage.getItem('ssc_exam_review');
-    const savedIndex = localStorage.getItem('ssc_exam_current_index');
-    const savedTime = localStorage.getItem('ssc_exam_time');
-
-    if (savedAnswers) {
-      setSelectedAnswers(JSON.parse(savedAnswers));
-    }
-
-    if (savedReview) {
-      setMarkedForReview(JSON.parse(savedReview));
-    }
-
-    if (savedIndex) {
-      setCurrentIndex(Number(savedIndex));
-    }
-
-    if (savedTime) {
-      const parsedTime = Number(savedTime);
-
-      if (parsedTime > 0) {
-        setTimeLeft(parsedTime);
+      if (!questionData || questionData.length === 0) {
+        alert('This test has no questions.');
+        router.push('/');
+        return;
       }
+
+      // Arrange questions by the standard SSC section order.
+      const orderedQuestions = [...questionData].sort((a, b) => {
+        const subjectA = SUBJECT_ORDER.indexOf(a.subject);
+        const subjectB = SUBJECT_ORDER.indexOf(b.subject);
+
+        if (subjectA === -1 && subjectB === -1) return 0;
+        if (subjectA === -1) return 1;
+        if (subjectB === -1) return -1;
+
+        return subjectA - subjectB;
+      });
+
+      setTest(testData);
+      setQuestions(orderedQuestions);
+
+      // Dynamic duration from database.
+      setTimeLeft(testData.duration_minutes * 60);
+
+      setLoading(false);
     }
-  }, []);
 
-  // --------------------------------------------------
-  // SAVE PROGRESS LOCALLY
-  // --------------------------------------------------
+    loadTest();
+  }, [testId, router]);
 
-  useEffect(() => {
-    localStorage.setItem(
-      'ssc_exam_answers',
-      JSON.stringify(selectedAnswers)
+  // ==================================================
+  // SECTION DATA
+  // ==================================================
+
+  const availableSubjects = useMemo(() => {
+    const subjects = Array.from(
+      new Set(questions.map((q) => q.subject))
     );
-  }, [selectedAnswers]);
 
-  useEffect(() => {
-    localStorage.setItem(
-      'ssc_exam_review',
-      JSON.stringify(markedForReview)
+    return SUBJECT_ORDER.filter((subject) =>
+      subjects.includes(subject)
     );
-  }, [markedForReview]);
+  }, [questions]);
 
-  useEffect(() => {
-    localStorage.setItem(
-      'ssc_exam_current_index',
-      String(currentIndex)
-    );
-  }, [currentIndex]);
+  const questionsBySubject = useMemo(() => {
+    const result: Record<string, Question[]> = {};
 
-  useEffect(() => {
-    localStorage.setItem(
-      'ssc_exam_time',
-      String(timeLeft)
-    );
-  }, [timeLeft]);
-
-  // --------------------------------------------------
-  // TIMER
-  // --------------------------------------------------
-
- const submitTest = useCallback(async () => {
-  if (submittedRef.current || questions.length === 0) {
-    return;
-  }
-
-  submittedRef.current = true;
-  setIsSubmitting(true);
-
-  try {
-    const response = await fetch('/api/evaluate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        testId,
-        answers: selectedAnswers,
-      }),
+    availableSubjects.forEach((subject) => {
+      result[subject] = questions.filter(
+        (question) => question.subject === subject
+      );
     });
 
-    const data = await response.json();
+    return result;
+  }, [questions, availableSubjects]);
 
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || 'Submission failed');
+  const currentQuestion = questions[currentIndex];
+
+  const currentSubject = currentQuestion?.subject || '';
+
+  const currentSubjectQuestions =
+    questionsBySubject[currentSubject] || [];
+
+  // ==================================================
+  // TIMER
+  // ==================================================
+
+  const submitTest = useCallback(async () => {
+    if (
+      submittedRef.current ||
+      questions.length === 0 ||
+      !testId
+    ) {
+      return;
     }
 
-    localStorage.removeItem('ssc_exam_answers');
-    localStorage.removeItem('ssc_exam_review');
-    localStorage.removeItem('ssc_exam_current_index');
-    localStorage.removeItem('ssc_exam_time');
+    submittedRef.current = true;
+    setIsSubmitting(true);
 
-    setScoreResult(data.result);
-    setShowSubmitModal(false);
+    try {
+      const response = await fetch('/api/evaluate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          testId,
+          answers: selectedAnswers,
+        }),
+      });
 
-  } catch (error) {
-    console.error('Submission error:', error);
+      const data = await response.json();
 
-    alert(
-      'Could not submit the test. Please check your internet connection and try again.'
-    );
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error || 'Submission failed'
+        );
+      }
 
-    submittedRef.current = false;
-  } finally {
-    setIsSubmitting(false);
-  }
-}, [questions.length, selectedAnswers]);
+      localStorage.removeItem(
+        `ssc_exam_answers_${testId}`
+      );
+
+      localStorage.removeItem(
+        `ssc_exam_review_${testId}`
+      );
+
+      localStorage.removeItem(
+        `ssc_exam_index_${testId}`
+      );
+
+      setScoreResult(data.result);
+      setShowSubmitModal(false);
+
+    } catch (error) {
+      console.error(error);
+
+      alert(
+        'Could not submit the test. Please check your internet connection.'
+      );
+
+      submittedRef.current = false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [questions.length, selectedAnswers, testId]);
 
   useEffect(() => {
-    if (questions.length === 0 || scoreResult || submittedRef.current) {
+    if (
+      loading ||
+      questions.length === 0 ||
+      scoreResult ||
+      submittedRef.current
+    ) {
       return;
     }
 
@@ -201,7 +250,6 @@ export default function SSCExamPage() {
         if (previous <= 1) {
           clearInterval(timer);
 
-          // Auto submit when timer reaches zero
           submitTest();
 
           return 0;
@@ -212,307 +260,488 @@ export default function SSCExamPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [questions.length, scoreResult, submitTest]);
+  }, [
+    loading,
+    questions.length,
+    scoreResult,
+    submitTest,
+  ]);
 
-  // --------------------------------------------------
-  // SELECT ANSWER
-  // --------------------------------------------------
+  // ==================================================
+  // SAVE PROGRESS
+  // ==================================================
 
-  const handleOptionSelect = (optionLetter: string) => {
-    if (!questions[currentIndex]) return;
+  useEffect(() => {
+    if (!testId) return;
 
-    const questionId = questions[currentIndex].id;
+    localStorage.setItem(
+      `ssc_exam_answers_${testId}`,
+      JSON.stringify(selectedAnswers)
+    );
+  }, [selectedAnswers, testId]);
+
+  useEffect(() => {
+    if (!testId) return;
+
+    localStorage.setItem(
+      `ssc_exam_review_${testId}`,
+      JSON.stringify(markedForReview)
+    );
+  }, [markedForReview, testId]);
+
+  useEffect(() => {
+    if (!testId) return;
+
+    localStorage.setItem(
+      `ssc_exam_index_${testId}`,
+      String(currentIndex)
+    );
+  }, [currentIndex, testId]);
+
+  // ==================================================
+  // RESTORE ANSWERS
+  // ==================================================
+
+  useEffect(() => {
+    if (!testId) return;
+
+    const answers = localStorage.getItem(
+      `ssc_exam_answers_${testId}`
+    );
+
+    const review = localStorage.getItem(
+      `ssc_exam_review_${testId}`
+    );
+
+    const index = localStorage.getItem(
+      `ssc_exam_index_${testId}`
+    );
+
+    if (answers) {
+      setSelectedAnswers(JSON.parse(answers));
+    }
+
+    if (review) {
+      setMarkedForReview(JSON.parse(review));
+    }
+
+    if (index) {
+      setCurrentIndex(Number(index));
+    }
+  }, [testId]);
+
+  // ==================================================
+  // QUESTION NAVIGATION
+  // ==================================================
+
+  const selectAnswer = (answer: string) => {
+    if (!currentQuestion) return;
 
     setSelectedAnswers((previous) => ({
       ...previous,
-      [questionId]: optionLetter,
+      [currentQuestion.id]: answer,
     }));
   };
 
-  // --------------------------------------------------
-  // CLEAR RESPONSE
-  // --------------------------------------------------
-
   const clearResponse = () => {
-    if (!questions[currentIndex]) return;
-
-    const questionId = questions[currentIndex].id;
+    if (!currentQuestion) return;
 
     setSelectedAnswers((previous) => {
       const updated = { ...previous };
-      delete updated[questionId];
+
+      delete updated[currentQuestion.id];
+
       return updated;
     });
   };
 
-  // --------------------------------------------------
-  // MARK / UNMARK FOR REVIEW
-  // --------------------------------------------------
-
   const toggleReview = () => {
-    if (!questions[currentIndex]) return;
-
-    const questionId = questions[currentIndex].id;
+    if (!currentQuestion) return;
 
     setMarkedForReview((previous) => ({
       ...previous,
-      [questionId]: !previous[questionId],
+      [currentQuestion.id]:
+        !previous[currentQuestion.id],
     }));
   };
 
-  // --------------------------------------------------
-  // SAVE & NEXT
-  // --------------------------------------------------
-
-  const saveAndNext = () => {
+  const nextQuestion = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((previous) => previous + 1);
     }
   };
 
-  // --------------------------------------------------
-  // MARK FOR REVIEW & NEXT
-  // --------------------------------------------------
+  const previousQuestion = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex((previous) => previous - 1);
+    }
+  };
 
   const markReviewAndNext = () => {
-    if (!questions[currentIndex]) return;
-
-    const questionId = questions[currentIndex].id;
+    if (!currentQuestion) return;
 
     setMarkedForReview((previous) => ({
       ...previous,
-      [questionId]: true,
+      [currentQuestion.id]: true,
     }));
 
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex((previous) => previous + 1);
+    nextQuestion();
+  };
+
+  // ==================================================
+  // SECTION SWITCHING
+  // ==================================================
+
+  const goToSubject = (subject: string) => {
+    const index = questions.findIndex(
+      (question) => question.subject === subject
+    );
+
+    if (index !== -1) {
+      setCurrentIndex(index);
     }
   };
 
-  // --------------------------------------------------
-  // FORMAT TIMER
-  // --------------------------------------------------
+  // ==================================================
+  // TIMER FORMAT
+  // ==================================================
 
   const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+
+    const minutes = Math.floor(
+      (seconds % 3600) / 60
+    );
+
     const secs = seconds % 60;
 
-    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(
+        minutes
+      ).padStart(2, '0')}:${String(secs).padStart(
+        2,
+        '0'
+      )}`;
+    }
+
+    return `${String(minutes).padStart(
       2,
       '0'
-    )}`;
+    )}:${String(secs).padStart(2, '0')}`;
   };
 
-  // --------------------------------------------------
-  // LOADING
-  // --------------------------------------------------
+  // ==================================================
+  // COUNTS
+  // ==================================================
 
-  if (questions.length === 0) {
+  const answeredCount =
+    Object.keys(selectedAnswers).length;
+
+  const markedCount =
+    Object.values(markedForReview).filter(Boolean)
+      .length;
+
+  const unattemptedCount =
+    questions.length - answeredCount;
+
+  const subjectAnsweredCount =
+    currentSubjectQuestions.filter(
+      (question) => selectedAnswers[question.id]
+    ).length;
+
+  const subjectMarkedCount =
+    currentSubjectQuestions.filter(
+      (question) => markedForReview[question.id]
+    ).length;
+
+  const isAnswered =
+    Boolean(
+      currentQuestion &&
+        selectedAnswers[currentQuestion.id]
+    );
+
+  const isMarked =
+    Boolean(
+      currentQuestion &&
+        markedForReview[currentQuestion.id]
+    );
+
+  // ==================================================
+  // LOADING
+  // ==================================================
+
+  if (loading || !test || !currentQuestion) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <main className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-lg font-semibold text-gray-700">
-            Loading Test Questions...
+
+          <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
+
+          <p className="font-semibold text-gray-700">
+            Loading Test...
           </p>
+
         </div>
-      </div>
+      </main>
     );
   }
 
-  // --------------------------------------------------
-  // RESULT SCREEN
-  // --------------------------------------------------
+  // ==================================================
+  // RESULT
+  // ==================================================
 
   if (scoreResult) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 sm:p-8">
-          <div className="text-center">
-            <div className="text-5xl mb-4">🎉</div>
+      <main className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
 
-            <h1 className="text-3xl font-bold text-gray-800">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 sm:p-8">
+
+          <div className="text-center">
+
+            <div className="text-5xl mb-4">
+              🎉
+            </div>
+
+            <h1 className="text-3xl font-extrabold text-gray-800">
               Test Completed
             </h1>
 
             <p className="text-gray-500 mt-2">
-              Here is your performance summary
+              {test.title}
             </p>
+
           </div>
 
-          <div className="mt-8 bg-blue-50 rounded-xl p-6 text-center">
-            <p className="text-sm text-gray-500">Your Score</p>
+          <div className="bg-blue-50 rounded-xl p-6 text-center mt-7">
+
+            <p className="text-sm text-gray-500">
+              Your Score
+            </p>
 
             <p className="text-5xl font-extrabold text-blue-600 mt-1">
               {scoreResult.score}
             </p>
 
-            <p className="text-sm text-gray-500 mt-2">
-              out of {questions.length * 2}
-            </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mt-6">
+          <div className="grid grid-cols-3 gap-3 mt-5">
+
             <div className="bg-green-50 rounded-xl p-4 text-center">
+
               <p className="text-2xl font-bold text-green-600">
                 {scoreResult.correct}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Correct</p>
+
+              <p className="text-xs text-gray-500">
+                Correct
+              </p>
+
             </div>
 
             <div className="bg-red-50 rounded-xl p-4 text-center">
+
               <p className="text-2xl font-bold text-red-600">
                 {scoreResult.wrong}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Wrong</p>
+
+              <p className="text-xs text-gray-500">
+                Wrong
+              </p>
+
             </div>
 
             <div className="bg-gray-100 rounded-xl p-4 text-center">
+
               <p className="text-2xl font-bold text-gray-600">
                 {scoreResult.unattempted}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Unattempted</p>
+
+              <p className="text-xs text-gray-500">
+                Unattempted
+              </p>
+
             </div>
+
           </div>
 
           <button
-            onClick={() => window.location.reload()}
-            className="w-full mt-8 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition"
+            onClick={() => router.push('/')}
+            className="w-full mt-7 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl"
           >
-            Take Test Again
+            Back to Tests
           </button>
+
         </div>
-      </div>
+
+      </main>
     );
   }
 
-  const currentQ = questions[currentIndex];
-
-  const isAnswered = Boolean(selectedAnswers[currentQ.id]);
-  const isMarked = Boolean(markedForReview[currentQ.id]);
-
-  const answeredCount = Object.keys(selectedAnswers).length;
-
-  const markedCount = Object.values(markedForReview).filter(Boolean).length;
-
-  const unattemptedCount = questions.length - answeredCount;
+  // ==================================================
+  // EXAM UI
+  // ==================================================
 
   const timeWarning = timeLeft <= 300;
 
-  // --------------------------------------------------
-  // EXAM INTERFACE
-  // --------------------------------------------------
-
   return (
-    <div className="min-h-screen bg-gray-100 font-sans">
+    <main className="min-h-screen bg-gray-100">
 
-      {/* ================= HEADER ================= */}
+      {/* HEADER */}
 
-      <header className="sticky top-0 z-30 bg-white border-b shadow-sm">
-        <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+      <header className="sticky top-0 z-40 bg-white border-b shadow-sm">
 
-          <div>
-            <h1 className="font-bold text-gray-800 text-sm sm:text-lg">
-              SSC CGL Tier-1 Mock Test
-            </h1>
+        <div className="max-w-7xl mx-auto px-3 sm:px-5 py-3">
 
-            <p className="text-xs text-gray-500 hidden sm:block">
-              General Mock Test
-            </p>
+          <div className="flex items-center justify-between gap-3">
+
+            <div className="min-w-0">
+
+              <h1 className="font-bold text-gray-800 text-sm sm:text-lg truncate">
+                {test.title}
+              </h1>
+
+              <p className="text-xs text-gray-500 hidden sm:block">
+                {questions.length} Questions
+              </p>
+
+            </div>
+
+            <div
+              className={`px-3 sm:px-5 py-2 rounded-lg font-mono font-bold text-sm sm:text-lg ${
+                timeWarning
+                  ? 'bg-red-100 text-red-600 animate-pulse'
+                  : 'bg-blue-100 text-blue-700'
+              }`}
+            >
+              ⏱ {formatTime(timeLeft)}
+            </div>
+
           </div>
 
-          <div
-            className={`px-4 py-2 rounded-lg font-mono font-bold text-sm sm:text-lg ${
-              timeWarning
-                ? 'bg-red-100 text-red-600 animate-pulse'
-                : 'bg-blue-100 text-blue-700'
-            }`}
-          >
-            ⏱ {formatTime(timeLeft)}
+          {/* SECTION TABS */}
+
+          <div className="flex gap-1 sm:gap-2 mt-3 overflow-x-auto pb-1">
+
+            {availableSubjects.map((subject) => {
+
+              const active =
+                subject === currentSubject;
+
+              const count =
+                questionsBySubject[subject]?.length || 0;
+
+              return (
+                <button
+                  key={subject}
+                  onClick={() => goToSubject(subject)}
+                  className={`shrink-0 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition ${
+                    active
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {subject}
+                  <span className="ml-1 opacity-75">
+                    ({count})
+                  </span>
+                </button>
+              );
+
+            })}
+
           </div>
 
         </div>
+
       </header>
 
-      {/* ================= MAIN ================= */}
+      {/* MAIN */}
 
-      <main className="max-w-7xl mx-auto p-3 sm:p-5">
+      <div className="max-w-7xl mx-auto p-3 sm:p-5">
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-          {/* ================= QUESTION AREA ================= */}
+          {/* QUESTION */}
 
-          <section className="lg:col-span-2 bg-white rounded-xl shadow-sm border overflow-hidden">
+          <section className="lg:col-span-2 bg-white rounded-xl border shadow-sm overflow-hidden">
 
-            {/* Question Header */}
+            {/* QUESTION HEADER */}
 
-            <div className="px-4 sm:px-6 py-4 border-b flex items-center justify-between gap-3">
+            <div className="px-4 sm:px-6 py-4 border-b flex justify-between items-center gap-3">
 
               <div>
-                <p className="text-sm font-bold text-gray-800">
+
+                <p className="text-xs text-blue-600 font-bold uppercase">
+                  {currentSubject}
+                </p>
+
+                <p className="font-bold text-gray-800 mt-1">
                   Question {currentIndex + 1}
                   <span className="font-normal text-gray-400">
                     {' '}
                     / {questions.length}
                   </span>
                 </p>
+
               </div>
 
-              <div className="flex gap-2">
+              <div className="text-right text-xs text-gray-500">
 
-                {isAnswered && (
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-700">
-                    Answered
-                  </span>
-                )}
+                <p>
+                  Section: {subjectAnsweredCount}/
+                  {currentSubjectQuestions.length}
+                </p>
 
-                {isMarked && (
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 text-purple-700">
-                    Review
-                  </span>
+                {subjectMarkedCount > 0 && (
+                  <p className="text-purple-600 font-semibold">
+                    {subjectMarkedCount} marked
+                  </p>
                 )}
 
               </div>
 
             </div>
 
-            {/* Question */}
+            {/* QUESTION CONTENT */}
 
             <div className="p-4 sm:p-7">
 
-              <div className="mb-7">
-                <p className="text-base sm:text-lg leading-7 text-gray-800 font-medium">
-                  {currentQ.question_text}
-                </p>
-              </div>
+              <p className="text-base sm:text-lg leading-7 font-medium text-gray-800">
+                {currentQuestion.question_text}
+              </p>
 
-              {/* Options */}
-
-              <div className="space-y-3">
+              <div className="space-y-3 mt-7">
 
                 {['a', 'b', 'c', 'd'].map((letter) => {
 
                   const upper = letter.toUpperCase();
 
                   const selected =
-                    selectedAnswers[currentQ.id] === upper;
+                    selectedAnswers[currentQuestion.id] ===
+                    upper;
+
+                  const option =
+                    currentQuestion[
+                      `option_${letter}` as keyof Question
+                    ];
 
                   return (
                     <button
                       key={letter}
-                      type="button"
-                      onClick={() => handleOptionSelect(upper)}
+                      onClick={() =>
+                        selectAnswer(upper)
+                      }
                       className={`w-full text-left p-3.5 sm:p-4 rounded-xl border-2 transition ${
                         selected
                           ? 'border-blue-600 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50 text-gray-700'
+                          : 'border-gray-200 hover:border-blue-300'
                       }`}
                     >
 
-                      <div className="flex items-start gap-3">
+                      <div className="flex gap-3 items-start">
 
                         <span
-                          className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
+                          className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold ${
                             selected
                               ? 'bg-blue-600 text-white'
                               : 'border border-gray-400 text-gray-600'
@@ -521,8 +750,8 @@ export default function SSCExamPage() {
                           {upper}
                         </span>
 
-                        <span className="pt-0.5">
-                          {currentQ[`option_${letter}` as keyof Question]}
+                        <span className="pt-1">
+                          {option}
                         </span>
 
                       </div>
@@ -535,31 +764,31 @@ export default function SSCExamPage() {
 
             </div>
 
-            {/* ================= ACTIONS ================= */}
+            {/* ACTIONS */}
 
             <div className="border-t bg-gray-50 p-4">
 
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
 
                 <button
-                  type="button"
                   onClick={clearResponse}
                   disabled={!isAnswered}
-                  className="px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-semibold text-sm disabled:opacity-40"
+                  className="px-4 py-2.5 rounded-lg bg-white border font-semibold text-sm disabled:opacity-40"
                 >
                   Clear Response
                 </button>
 
                 <button
-                  type="button"
                   onClick={toggleReview}
                   className={`px-4 py-2.5 rounded-lg font-semibold text-sm ${
                     isMarked
                       ? 'bg-purple-600 text-white'
-                      : 'border border-purple-300 bg-white text-purple-700'
+                      : 'bg-white border text-purple-700'
                   }`}
                 >
-                  {isMarked ? 'Unmark Review' : 'Mark for Review'}
+                  {isMarked
+                    ? 'Unmark Review'
+                    : 'Mark for Review'}
                 </button>
 
               </div>
@@ -567,21 +796,20 @@ export default function SSCExamPage() {
               <div className="flex justify-between gap-3 mt-4">
 
                 <button
-                  type="button"
+                  onClick={previousQuestion}
                   disabled={currentIndex === 0}
-                  onClick={() =>
-                    setCurrentIndex((previous) => previous - 1)
-                  }
-                  className="px-5 py-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-5 py-3 rounded-lg bg-gray-200 font-bold disabled:opacity-40"
                 >
                   ← Previous
                 </button>
 
                 <button
-                  type="button"
-                  onClick={saveAndNext}
-                  disabled={currentIndex === questions.length - 1}
-                  className="px-5 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={nextQuestion}
+                  disabled={
+                    currentIndex ===
+                    questions.length - 1
+                  }
+                  className="px-5 py-3 rounded-lg bg-blue-600 text-white font-bold disabled:opacity-40"
                 >
                   Save & Next →
                 </button>
@@ -589,10 +817,12 @@ export default function SSCExamPage() {
               </div>
 
               <button
-                type="button"
                 onClick={markReviewAndNext}
-                disabled={currentIndex === questions.length - 1}
-                className="w-full mt-3 py-2.5 rounded-lg border border-purple-300 bg-white hover:bg-purple-50 text-purple-700 font-semibold text-sm disabled:opacity-40"
+                disabled={
+                  currentIndex ===
+                  questions.length - 1
+                }
+                className="w-full mt-3 py-2.5 rounded-lg bg-white border border-purple-300 text-purple-700 font-semibold text-sm disabled:opacity-40"
               >
                 Mark for Review & Next
               </button>
@@ -601,132 +831,133 @@ export default function SSCExamPage() {
 
           </section>
 
-          {/* ================= PALETTE ================= */}
+          {/* SIDEBAR */}
 
-          <aside className="bg-white rounded-xl shadow-sm border p-4 sm:p-5 h-fit lg:sticky lg:top-24">
+          <aside className="bg-white rounded-xl border shadow-sm p-4 h-fit lg:sticky lg:top-28">
 
-            <div className="mb-5">
+            {/* OVERALL STATUS */}
 
-              <h2 className="font-bold text-gray-800">
-                Question Palette
-              </h2>
+            <h2 className="font-bold text-gray-800">
+              Question Palette
+            </h2>
 
-              <div className="grid grid-cols-3 gap-2 mt-4">
+            <div className="grid grid-cols-3 gap-2 mt-4">
 
-                <div className="bg-green-50 rounded-lg p-2 text-center">
-                  <p className="font-bold text-green-600">
-                    {answeredCount}
-                  </p>
-                  <p className="text-[10px] text-gray-500">
-                    Answered
-                  </p>
-                </div>
+              <div className="bg-green-50 rounded-lg p-2 text-center">
 
-                <div className="bg-gray-100 rounded-lg p-2 text-center">
-                  <p className="font-bold text-gray-600">
-                    {unattemptedCount}
-                  </p>
-                  <p className="text-[10px] text-gray-500">
-                    Unanswered
-                  </p>
-                </div>
+                <p className="font-bold text-green-600">
+                  {answeredCount}
+                </p>
 
-                <div className="bg-purple-50 rounded-lg p-2 text-center">
-                  <p className="font-bold text-purple-600">
-                    {markedCount}
-                  </p>
-                  <p className="text-[10px] text-gray-500">
-                    Review
-                  </p>
-                </div>
+                <p className="text-[10px] text-gray-500">
+                  Answered
+                </p>
+
+              </div>
+
+              <div className="bg-gray-100 rounded-lg p-2 text-center">
+
+                <p className="font-bold text-gray-600">
+                  {unattemptedCount}
+                </p>
+
+                <p className="text-[10px] text-gray-500">
+                  Unanswered
+                </p>
+
+              </div>
+
+              <div className="bg-purple-50 rounded-lg p-2 text-center">
+
+                <p className="font-bold text-purple-600">
+                  {markedCount}
+                </p>
+
+                <p className="text-[10px] text-gray-500">
+                  Review
+                </p>
 
               </div>
 
             </div>
 
-            <div className="max-h-[420px] overflow-y-auto pr-1">
+            {/* SECTION PALETTE */}
 
-              <div className="grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-5 gap-2">
+            <div className="mt-5 border-t pt-4">
 
-                {questions.map((q, idx) => {
+              <p className="text-xs font-bold text-gray-500 uppercase mb-3">
+                {currentSubject}
+              </p>
 
-                  const answered = Boolean(selectedAnswers[q.id]);
-                  const review = Boolean(markedForReview[q.id]);
-                  const current = idx === currentIndex;
+              <div className="grid grid-cols-5 gap-2 max-h-[300px] overflow-y-auto">
 
-                  let colorClass =
-                    'bg-gray-100 text-gray-700 border-gray-200';
+                {currentSubjectQuestions.map(
+                  (question) => {
 
-                  if (review && answered) {
-                    colorClass =
-                      'bg-yellow-500 text-white border-yellow-500';
-                  } else if (review) {
-                    colorClass =
-                      'bg-purple-600 text-white border-purple-600';
-                  } else if (answered) {
-                    colorClass =
-                      'bg-green-500 text-white border-green-500';
+                    const questionIndex =
+                      questions.findIndex(
+                        (q) => q.id === question.id
+                      );
+
+                    const answered =
+                      Boolean(
+                        selectedAnswers[question.id]
+                      );
+
+                    const review =
+                      Boolean(
+                        markedForReview[question.id]
+                      );
+
+                    const current =
+                      questionIndex === currentIndex;
+
+                    let color =
+                      'bg-gray-100 text-gray-700 border-gray-200';
+
+                    if (review && answered) {
+                      color =
+                        'bg-yellow-500 text-white border-yellow-500';
+                    } else if (review) {
+                      color =
+                        'bg-purple-600 text-white border-purple-600';
+                    } else if (answered) {
+                      color =
+                        'bg-green-500 text-white border-green-500';
+                    }
+
+                    return (
+                      <button
+                        key={question.id}
+                        onClick={() =>
+                          setCurrentIndex(
+                            questionIndex
+                          )
+                        }
+                        className={`aspect-square rounded-lg border font-bold text-sm ${color} ${
+                          current
+                            ? 'ring-4 ring-blue-300 ring-offset-1'
+                            : ''
+                        }`}
+                      >
+                        {questionIndex + 1}
+                      </button>
+                    );
+
                   }
-
-                  return (
-                    <button
-                      key={q.id}
-                      type="button"
-                      onClick={() => setCurrentIndex(idx)}
-                      className={`relative aspect-square rounded-lg border font-bold text-sm transition ${colorClass} ${
-                        current
-                          ? 'ring-4 ring-blue-300 ring-offset-1'
-                          : ''
-                      }`}
-                    >
-                      {idx + 1}
-
-                      {review && (
-                        <span className="absolute -top-1 -right-1 text-[9px]">
-                          🚩
-                        </span>
-                      )}
-
-                    </button>
-                  );
-                })}
+                )}
 
               </div>
 
             </div>
 
-            {/* Legend */}
-
-            <div className="mt-5 pt-4 border-t space-y-2 text-xs text-gray-600">
-
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 rounded bg-green-500" />
-                Answered
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 rounded bg-gray-100 border" />
-                Not Answered
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 rounded bg-purple-600" />
-                Marked for Review
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 rounded bg-yellow-500" />
-                Answered + Review
-              </div>
-
-            </div>
-
-            {/* Submit */}
+            {/* SUBMIT */}
 
             <button
-              type="button"
-              onClick={() => setShowSubmitModal(true)}
-              className="w-full mt-5 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-sm"
+              onClick={() =>
+                setShowSubmitModal(true)
+              }
+              className="w-full mt-5 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl"
             >
               SUBMIT EXAM
             </button>
@@ -735,50 +966,60 @@ export default function SSCExamPage() {
 
         </div>
 
-      </main>
+      </div>
 
-      {/* ================= SUBMIT MODAL ================= */}
+      {/* SUBMIT MODAL */}
 
       {showSubmitModal && (
+
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
 
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
 
             <h2 className="text-xl font-bold text-gray-800">
               Submit Test?
             </h2>
 
-            <p className="text-gray-500 text-sm mt-2">
-              Are you sure you want to submit your test?
+            <p className="text-sm text-gray-500 mt-2">
+              Please check your responses before submitting.
             </p>
 
             <div className="grid grid-cols-3 gap-3 mt-6">
 
-              <div className="bg-green-50 p-3 rounded-lg text-center">
-                <p className="font-bold text-green-600">
+              <div className="bg-green-50 rounded-lg p-3 text-center">
+
+                <p className="text-xl font-bold text-green-600">
                   {answeredCount}
                 </p>
+
                 <p className="text-xs text-gray-500">
                   Answered
                 </p>
+
               </div>
 
-              <div className="bg-gray-100 p-3 rounded-lg text-center">
-                <p className="font-bold text-gray-600">
+              <div className="bg-gray-100 rounded-lg p-3 text-center">
+
+                <p className="text-xl font-bold text-gray-600">
                   {unattemptedCount}
                 </p>
+
                 <p className="text-xs text-gray-500">
                   Unanswered
                 </p>
+
               </div>
 
-              <div className="bg-purple-50 p-3 rounded-lg text-center">
-                <p className="font-bold text-purple-600">
+              <div className="bg-purple-50 rounded-lg p-3 text-center">
+
+                <p className="text-xl font-bold text-purple-600">
                   {markedCount}
                 </p>
+
                 <p className="text-xs text-gray-500">
                   Review
                 </p>
+
               </div>
 
             </div>
@@ -786,21 +1027,23 @@ export default function SSCExamPage() {
             <div className="flex gap-3 mt-7">
 
               <button
-                type="button"
-                onClick={() => setShowSubmitModal(false)}
+                onClick={() =>
+                  setShowSubmitModal(false)
+                }
                 disabled={isSubmitting}
-                className="flex-1 py-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold"
+                className="flex-1 py-3 rounded-lg bg-gray-200 font-bold"
               >
-                Continue Test
+                Continue
               </button>
 
               <button
-                type="button"
                 onClick={submitTest}
                 disabled={isSubmitting}
-                className="flex-1 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold disabled:opacity-50"
+                className="flex-1 py-3 rounded-lg bg-red-600 text-white font-bold disabled:opacity-50"
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Test'}
+                {isSubmitting
+                  ? 'Submitting...'
+                  : 'Submit Test'}
               </button>
 
             </div>
@@ -808,8 +1051,9 @@ export default function SSCExamPage() {
           </div>
 
         </div>
+
       )}
 
-    </div>
+    </main>
   );
 }
