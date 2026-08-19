@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     // Correct answers are accessed only on the server.
     const { data: questions, error } = await supabase
       .from('questions')
-      .select('id, correct_option')
+      .select('id, subject, correct_option')
       .eq('test_id', testId);
 
     if (error) {
@@ -67,24 +67,55 @@ export async function POST(req: NextRequest) {
     }
 
     let score = 0;
-    let correct = 0;
-    let wrong = 0;
+let correct = 0;
+let wrong = 0;
 
-    questions.forEach((question) => {
-      const userAnswer = answers[question.id];
+const sectionScores: Record<
+  string,
+  {
+    score: number;
+    correct: number;
+    wrong: number;
+    unattempted: number;
+  }
+> = {};
 
-      if (!userAnswer) {
-        return;
-      }
+   questions.forEach((question) => {
+  const userAnswer = answers[question.id];
+  const subject = question.subject || 'Other';
 
-      if (userAnswer === question.correct_option) {
-        score += Number(test.positive_marks);
-        correct++;
-      } else {
-        score -= Number(test.negative_marks);
-        wrong++;
-      }
-    });
+  if (!sectionScores[subject]) {
+    sectionScores[subject] = {
+      score: 0,
+      correct: 0,
+      wrong: 0,
+      unattempted: 0,
+    };
+  }
+
+  if (!userAnswer) {
+    sectionScores[subject].unattempted++;
+    return;
+  }
+
+  if (userAnswer === question.correct_option) {
+    score += Number(test.positive_marks);
+    correct++;
+
+    sectionScores[subject].score +=
+      Number(test.positive_marks);
+
+    sectionScores[subject].correct++;
+  } else {
+    score -= Number(test.negative_marks);
+    wrong++;
+
+    sectionScores[subject].score -=
+      Number(test.negative_marks);
+
+    sectionScores[subject].wrong++;
+  }
+});
 
     const unattempted = questions.length - correct - wrong;
 
@@ -134,13 +165,14 @@ if (activeAttempt) {
     await supabase
       .from('test_attempts')
       .update({
-        status: 'submitted',
-        submitted_at: new Date().toISOString(),
-        score,
-        correct,
-        wrong,
-        unattempted,
-      })
+  status: 'submitted',
+  submitted_at: new Date().toISOString(),
+  score,
+  correct,
+  wrong,
+  unattempted,
+  section_scores: sectionScores,
+})
       .eq('id', activeAttempt.id);
 
   if (attemptUpdateError) {
