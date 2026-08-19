@@ -8,37 +8,61 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const { testId, answers } = await req.json();
 
-    const { answers } = body;
-
-    if (!answers || typeof answers !== 'object') {
+    if (!testId || !answers) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Invalid answers'
+          error: 'Test ID and answers are required',
         },
         { status: 400 }
       );
     }
 
-    // Fetch questions INCLUDING correct answers.
-    // This happens ONLY on the server.
+    // Get questions ONLY for this test.
+    // Correct answers are accessed only on the server.
     const { data: questions, error } = await supabase
       .from('questions')
-      .select(
-        'id, correct_option'
-      );
+      .select('id, correct_option')
+      .eq('test_id', testId);
 
     if (error) {
-      console.error('Question fetch error:', error);
+      console.error(error);
 
       return NextResponse.json(
         {
           success: false,
-          error: 'Could not evaluate test'
+          error: 'Could not load test questions',
         },
         { status: 500 }
+      );
+    }
+
+    if (!questions || questions.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'No questions found for this test',
+        },
+        { status: 404 }
+      );
+    }
+
+    // Get test marking scheme
+    const { data: test, error: testError } = await supabase
+      .from('tests')
+      .select('positive_marks, negative_marks')
+      .eq('id', testId)
+      .single();
+
+    if (testError || !test) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Test not found',
+        },
+        { status: 404 }
       );
     }
 
@@ -46,7 +70,7 @@ export async function POST(req: NextRequest) {
     let correct = 0;
     let wrong = 0;
 
-    questions?.forEach((question) => {
+    questions.forEach((question) => {
       const userAnswer = answers[question.id];
 
       if (!userAnswer) {
@@ -54,35 +78,34 @@ export async function POST(req: NextRequest) {
       }
 
       if (userAnswer === question.correct_option) {
-        score += 2;
+        score += Number(test.positive_marks);
         correct++;
       } else {
-        score -= 0.5;
+        score -= Number(test.negative_marks);
         wrong++;
       }
     });
 
-    const unattempted =
-      (questions?.length || 0) - correct - wrong;
+    const unattempted = questions.length - correct - wrong;
 
-    // Save result
-    const { error: insertError } = await supabase
+    const { error: resultError } = await supabase
       .from('test_results')
       .insert([
         {
+          test_id: testId,
           score,
           correct_answers: correct,
-          wrong_answers: wrong
-        }
+          wrong_answers: wrong,
+        },
       ]);
 
-    if (insertError) {
-      console.error('Result save error:', insertError);
+    if (resultError) {
+      console.error(resultError);
 
       return NextResponse.json(
         {
           success: false,
-          error: 'Could not save result'
+          error: 'Could not save test result',
         },
         { status: 500 }
       );
@@ -94,8 +117,8 @@ export async function POST(req: NextRequest) {
         score,
         correct,
         wrong,
-        unattempted
-      }
+        unattempted,
+      },
     });
 
   } catch (error) {
@@ -104,7 +127,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: 'Evaluation failed'
+        error: 'Evaluation failed',
       },
       { status: 500 }
     );
